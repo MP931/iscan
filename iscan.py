@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
 import numpy as np
 
-gkdir = r"D:\M.Sawada\Documents\Git\UltimateGraph"
+gkdir=os.environ.get('gkdir')
 sys.path.append(gkdir)
 import GraphKernel
 

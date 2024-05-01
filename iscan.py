@@ -1,13 +1,13 @@
+import copy
 import csv
 import os
 import sys
+from datetime import datetime
 
-import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.ticker as plticker
 import numpy as np
 
-gkdir=os.environ.get('gkdir')
+gkdir = os.environ.get("gkdir")
 sys.path.append(gkdir)
 import GraphKernel
 
@@ -49,8 +49,7 @@ def parse(filename, transpose):
         metadata["ROW_SPACING"] = metadata["COL_SPACING"]
         metadata["COL_SPACING"] = temp
     if metadata["UNITS"] != "MPa":
-        print("ERROR! Unit is not in MPa")
-        return [], []
+        raise ValueError("Unit of sensor data is not in MPa")
     if metadata["AREA_UNIT"] == "cm2":  # convert cm2 to mm2
         metadata["ROW_SPACING"] = metadata["ROW_SPACING"] * 10
         metadata["COL_SPACING"] = metadata["COL_SPACING"] * 10
@@ -69,6 +68,11 @@ def parse(filename, transpose):
             absolute_time = row[3]
             raw_sum = row[6].split("=")[1]
             sensor = []
+
+            if raw_sum == "":
+                raw_sum = 0
+            else:
+                raw_sum = float(raw_sum)
 
             for row in reader:  # sensor data
                 if not row or row[0].startswith("@@"):  # end of current frame
@@ -163,36 +167,66 @@ def contour(
     plt.close(fig)
 
 
-def stats(metadata, frame, htrim_sensel):
-    trimmed_sensor, trimmed_averaged = trim(frame["sensor"], htrim_sensel)
+def findpeek(metadata, frames):
+    raw_sum = [frames[i]["raw_sum"] for i in range(len(frames))]
+    idx_max = np.argmax(raw_sum)
+    return idx_max
 
-    min = np.min(trimmed_averaged)
-    max = np.max(trimmed_averaged)
+
+def single_frame_stats(metadata, frame, output=False):
+    min = np.min(frame["sensor"])
+    max = np.max(frame["sensor"])
     dev = max - min
-    ave = np.mean(trimmed_averaged)
-    med = np.median(trimmed_averaged)
+    ave = np.mean(frame["sensor"])
+    med = np.median(frame["sensor"])
     error_p_ave = (max - ave) / ave * 100
     error_n_ave = (ave - min) / ave * 100
     error_p_med = (max - med) / med * 100
     error_n_med = (med - min) / med * 100
 
+    if output == True:
+        logfile = open(
+            os.getcwd()
+            + "\\StatsResult"
+            + datetime.now().strftime("_%y%m%d_%H%M")
+            + ".txt",
+            "w",
+        )
+        original_stdout = sys.stdout
+        sys.stdout = logfile
     print(
-        f'\nFilename:\n{metadata["FILENAME"]}\nFrame {frame["frame_number"]}, Trimmed and averaged'
+        f'FSX file: {metadata["FILENAME"]}\nFrame {frame["frame_number"]}, {frame.get("trim_type", "All sensors")} (Htrim: {frame.get("htrim", "")}, Vtrim: {frame.get("vtrim_top", "")}, {frame.get("vtrim_bottom", "")})'
     )
     print(
         "Max, Min, Deviation, Mean, Median, Error+(from average), Error-(from average), Error+(from median), Error-(from median)"
     )
     print(
-        f"{max}, {min}, {dev}, {ave}, {med}, {error_p_ave}, {error_n_ave}, {error_p_med}, {error_n_med}"
+        f"{max:.3f}, {min:.3f}, {dev:.3f}, {ave:.3f}, {med:.3f}, {error_p_ave:.3f}, {error_n_ave:.3f}, {error_p_med:.3f}, {error_n_med:.3f}"
     )
+    if output == True:
+        sys.stdout = original_stdout
 
 
-def trim(sensor, htrim_sensel, vtrim_nsensel_top=None, vtrim_nsensel_bottom=None):
-    htrimmed = htrim(sensor, htrim_sensel)
-    trimmed_sensor, trimmed_averaged = vtrim(
-        htrimmed, vtrim_nsensel_top, vtrim_nsensel_bottom
+def trim(frames, htrim_sensel, vtrim_nsensel_top=None, vtrim_nsensel_bottom=None):
+    frames_trimmed, frames_trimmed_averaged = copy.deepcopy(frames), copy.deepcopy(
+        frames
     )
-    return trimmed_sensor, trimmed_averaged
+    for i in range(len(frames)):
+        # save trimming setup
+        frames_trimmed[i]["trim_type"] = "Trimmed sensor array"
+        frames_trimmed[i]["htrim"] = htrim_sensel
+        frames_trimmed[i]["vtrim_top"] = vtrim_nsensel_top
+        frames_trimmed[i]["vtrim_bottom"] = vtrim_nsensel_bottom
+        frames_trimmed_averaged[i]["trim_type"] = "Trimmed and averaged horizontally"
+        frames_trimmed_averaged[i]["htrim"] = htrim_sensel
+        frames_trimmed_averaged[i]["vtrim_top"] = vtrim_nsensel_top
+        frames_trimmed_averaged[i]["vtrim_bottom"] = vtrim_nsensel_bottom
+
+        htrimmed = htrim(frames_trimmed[i]["sensor"], htrim_sensel)
+        frames_trimmed[i]["sensor"], frames_trimmed_averaged[i]["sensor"] = vtrim(
+            htrimmed, vtrim_nsensel_top, vtrim_nsensel_bottom
+        )
+    return frames_trimmed, frames_trimmed_averaged
 
 
 def htrim(sensor, htrim_sensel):
@@ -203,34 +237,129 @@ def htrim(sensor, htrim_sensel):
 
 
 def vtrim(htrimmed, vtrim_nsensel_top=None, vtrim_nsensel_bottom=None):
+    averaged = np.zeros(len(htrimmed))
+    for i, row in enumerate(htrimmed):
+        averaged[i] = np.mean(row)
+
     if vtrim_nsensel_top == None:  # define nsensel to trim
-        averaged = np.zeros(len(htrimmed))
-        for i, row in enumerate(htrimmed):
-            averaged[i] = np.mean(row)
         plt.scatter(np.arange(1, len(averaged) + 1, 1), averaged)
         plt.show(block=False)
-        vtrim_nsensel_top = int(input("How many sensels to be trimmed at the TOP?"))
+        vtrim_nsensel_top = int(input("How many sensels to be trimmed at the TOP?\n"))
         vtrim_nsensel_bottom = int(
-            input("How many sensels to be trimmed at the BOTTOM?")
+            input("How many sensels to be trimmed at the BOTTOM?\n")
         )
+        plt.close()
 
-    plt.close()
-    trimmed_sensor = htrimmed[vtrim_nsensel_top:-vtrim_nsensel_bottom]
+    trimmed_sensor = htrimmed.copy()[vtrim_nsensel_top:-vtrim_nsensel_bottom]
     trimmed_averaged = averaged[vtrim_nsensel_top:-vtrim_nsensel_bottom]
     return trimmed_sensor, trimmed_averaged
 
 
+def pressure_history(metadata, frames):
+    # parameters
+    ave_color = "royalblue"
+    ave_barcolor = "lightsteelblue"
+    med_color = "seagreen"
+    med_barcolor = "lightgreen"
+
+    min, max, dev, ave, med, error_p_ave, error_n_ave, error_p_med, error_n_med = (
+        np.zeros(len(frames)) for i in range(9)
+    )
+
+    for i, frame in enumerate(frames):
+        min[i] = np.min(frame["sensor"])
+        max[i] = np.max(frame["sensor"])
+        dev[i] = max[i] - min[i]
+        ave[i] = np.mean(frame["sensor"])
+        med[i] = np.median(frame["sensor"])
+        error_p_ave[i] = (max[i] - ave[i]) / ave[i] * 100
+        error_n_ave[i] = (ave[i] - min[i]) / ave[i] * 100
+        error_p_med[i] = (max[i] - med[i]) / med[i] * 100
+        error_n_med[i] = (med[i] - min[i]) / med[i] * 100
+
+    fig, ax = GraphKernel.prepare(
+        w="pp0.25", font="arial", fontsize=14, xtitle="Frame", ytitle="Pressure /MPa"
+    )
+
+    # plotting
+    x = np.arange(1, len(frames) + 1, 1)
+    # ax.scatter(x,ave,label="Average")
+    ax.errorbar(
+        x,
+        ave,
+        (
+            error_n_ave * 0.01 * ave,
+            error_p_ave * 0.01 * ave,
+        ),
+        label="Average",
+        ecolor=ave_barcolor,
+        elinewidth=2,
+        c=ave_color,
+    )
+    # ax.scatter(x,med, label="Median")
+    ax.errorbar(
+        x,
+        med,
+        (
+            error_n_med * 0.01 * med,
+            error_p_med * 0.01 * med,
+        ),
+        label="Median",
+        ecolor=med_barcolor,
+        elinewidth=2,
+        c=med_color,
+    )
+
+    ax.legend()
+
+    plt.show(block=False)
+    # plt.show(block=False)
+    plt.close()
+
+    # export contour
+    GraphKernel.finalize(
+        fig,
+        ax,
+        fn_figout=metadata["FILENAME_CSV"].split(".csv")[0]
+        + "_PressureDistHistory.png",
+        lims=[
+            0,
+            None,
+            0,
+            None,
+        ],
+    )
+    plt.close(fig)
+
+
 def debug():
-    # Example usage:
-    metadata, frames = parse(os.getcwd() + r"\iscan_test.csv", transpose=True)
+    # parameters
+    htrim_sensel = 10
 
-    # show contour
-    contour(metadata, frames[150])
+    # load sensor data
+    metadata, frames = parse(os.getcwd() + r"\iscan_test.csv", transpose=False)
 
-    # calculate statistics of an frame
-    stats(metadata, frames[150], htrim_sensel=10)
+    # have a rough idea of pressure distribution
+    # pressure_history()
 
-    # time history of pressure error
+    # locate peek, determine vtrim
+    idx_max = findpeek(metadata, frames)
+    # trim([frames[idx_max]], htrim_sensel=htrim_sensel)
+    # contour(metadata, frames[idx_max])
+
+    # trim edges of sensor matrix
+    frames_trimmed, frames_trimmed_averaged = trim(
+        frames,
+        htrim_sensel=htrim_sensel,
+        vtrim_nsensel_top=4,
+        vtrim_nsensel_bottom=7,
+    )
+
+    # stats of a frame
+    single_frame_stats(metadata, frames_trimmed_averaged[88], output=True)
+
+    # time series of pressure error
+    pressure_history(metadata, frames_trimmed_averaged)
 
     # # Print metadata
     # print("Metadata:")

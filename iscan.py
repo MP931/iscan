@@ -186,7 +186,7 @@ def single_frame_stats(metadata, frame, output=False):
 
     if output == True:
         logfile = open(
-            metadata["FILENAME_CSV"].split(".csv")[0]
+            os.path.dirname(os.path.abspath(metadata["FILENAME_CSV"]))
             + "\\StatsResult"
             + datetime.now().strftime("_%y%m%d_%H%M")
             + ".txt",

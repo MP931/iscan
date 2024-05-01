@@ -1,4 +1,0 @@
-FSX file: C:\Documents and Settings\guest\Desktop\finger contact pressures\hand4\hand4_index_45deg_hole35.fsx
-Frame 89, Trimmed and averaged horizontally (Htrim: 10, Vtrim: 4, 7)
-Max, Min, Deviation, Mean, Median, Error+(from average), Error-(from average), Error+(from median), Error-(from median)
-11.375, 0.000, 11.375, 1.360, 0.000, 736.216, 100.000, inf, nan

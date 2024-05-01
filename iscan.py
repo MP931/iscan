@@ -186,7 +186,7 @@ def single_frame_stats(metadata, frame, output=False):
 
     if output == True:
         logfile = open(
-            os.getcwd()
+            metadata["FILENAME_CSV"].split(".csv")[0]
             + "\\StatsResult"
             + datetime.now().strftime("_%y%m%d_%H%M")
             + ".txt",
@@ -335,9 +335,11 @@ def pressure_history(metadata, frames):
 def debug():
     # parameters
     htrim_sensel = 10
+    csvfile = os.getcwd() + r"\iscan_test.csv"
+    transpose = False
 
     # load sensor data
-    metadata, frames = parse(os.getcwd() + r"\iscan_test.csv", transpose=False)
+    metadata, frames = parse(csvfile, transpose=transpose)
 
     # have a rough idea of pressure distribution
     # pressure_history()

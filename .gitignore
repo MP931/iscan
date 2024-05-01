@@ -7,8 +7,10 @@
 *.jpg
 *.tiff
 
-#CSV file
+# CSV file
 *.csv
+# Text file
+*.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
